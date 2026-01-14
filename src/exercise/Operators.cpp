@@ -338,7 +338,70 @@ void push_momentum(std::vector<Particles> &particles, double dt) {
 
     // q' = dt * (q/2m)
     const double qp = particles[is].charge_m * dt * 0.5 / particles[is].mass_m;
+    
+    Particles::view_t Ex_m = particles[is].Ex_m;
+    Particles::view_t Ey_m = particles[is].Ey_m;
+    Particles::view_t Ez_m = particles[is].Ez_m;
+    
+    Particles::view_t mx_m = particles[is].mx_m;
+    Particles::view_t my_m = particles[is].my_m;
+    Particles::view_t mz_m = particles[is].mz_m;
+    
+    Particles::view_t Bx_m = particles[is].Bx_m;
+    Particles::view_t By_m = particles[is].By_m;
+    Particles::view_t Bz_m = particles[is].Bz_m;
+    
+    Kokkos::parallel_for(n_particles, KOKKOS_LAMBDA(const int ip) {
+	  double px = qp * Ex_m(ip);
+      double py = qp * Ey_m(ip);
+      double pz = qp * Ez_m(ip);
 
+      const double ux = mx_m(ip) + px;
+      const double uy = my_m(ip) + py;
+      const double uz = mz_m(ip) + pz;
+
+      // gamma-factor
+      double usq = (ux * ux + uy * uy + uz * uz);
+      double gamma = Kokkos::sqrt(1 + usq);
+      double gamma_inv = qp / gamma;
+
+      // B, T = Transform to rotate the particle
+      const double tx = gamma_inv * Bx_m(ip);
+      const double ty = gamma_inv * By_m(ip);
+      const double tz = gamma_inv * Bz_m(ip);
+      const double tsq = 1. + (tx * tx + ty * ty + tz * tz);
+      double tsq_inv = 1. / tsq;
+
+      px += ((1.0 + tx * tx - ty * ty - tz * tz) * ux +
+             2.0 * (tx * ty + tz) * uy + 2.0 * (tz * tx - ty) * uz) *
+            tsq_inv;
+
+      py += (2.0 * (tx * ty - tz) * ux +
+             (1.0 - tx * tx + ty * ty - tz * tz) * uy +
+             2.0 * (ty * tz + tx) * uz) *
+            tsq_inv;
+
+      pz += (2.0 * (tz * tx + ty) * ux + 2.0 * (ty * tz - tx) * uy +
+             (1.0 - tx * tx - ty * ty + tz * tz) * uz) *
+            tsq_inv;
+
+      // gamma-factor
+      usq = (px * px + py * py + pz * pz);
+      gamma = Kokkos::sqrt(1 + usq);
+
+      // Update inverse gamma factor
+      gamma_inv = 1 / gamma;
+
+      // Update momentum
+      mx_m(ip) = px;
+      my_m(ip) = py;
+      mz_m(ip) = pz;
+	});
+	
+	Kokkos::fence();
+	
+
+	/*
     for (std::size_t ip = 0; ip < n_particles; ++ip) {
       // 1/2 E
       double px = qp * particles[is].Ex_h_m(ip);
@@ -386,8 +449,13 @@ void push_momentum(std::vector<Particles> &particles, double dt) {
       particles[is].my_h_m(ip) = py;
       particles[is].mz_h_m(ip) = pz;
     } // end for particles
+  */
 
   } // end for species
+  
+  for (std::size_t is = 0; is < particles.size(); ++is) {
+      particles[is].sync(minipic::device, minipic::host);
+    }
 }
 
 //! \brief Boundaries condition on the particles, periodic
