@@ -21,17 +21,21 @@ void initialize(const Params &params, ElectroMagn &em,
 
     operators::interpolate(em, particles);
     
+    /*
     em.sync(minipic::device, minipic::host);
     for (std::size_t is = 0; is < particles.size(); ++is) {
       particles[is].sync(minipic::device, minipic::host);
     }
+    */
     
     operators::push_momentum(particles, -0.5 * params.dt);
 
+	/*
     em.sync(minipic::host, minipic::device);
     for (std::size_t is = 0; is < particles.size(); ++is) {
       particles[is].sync(minipic::host, minipic::device);
     }
+    */
   }
 }
 
@@ -65,10 +69,12 @@ void iterate(const Params &params, ElectroMagn &em,
 
   operators::pushBC(params, particles);
 
+	/*
   em.sync(minipic::device, minipic::host);
   for (std::size_t is = 0; is < particles.size(); ++is) {
       particles[is].sync(minipic::device, minipic::host);
   }
+  */
 
   DEBUG("  -> stop pushBC");
 
@@ -83,9 +89,11 @@ void iterate(const Params &params, ElectroMagn &em,
   // Projection in local field
   if (params.current_projection) {
 
+/*
     for (std::size_t is = 0; is < particles.size(); ++is) {
       particles[is].sync(minipic::device, minipic::host);
     }
+*/
 
     // Projection directly in the global grid
     DEBUG("  ->  start projection");
@@ -93,21 +101,23 @@ void iterate(const Params &params, ElectroMagn &em,
     operators::project(params, em, particles);
 
     DEBUG("  ->  stop projection");
-
+/*
     for (std::size_t is = 0; is < particles.size(); ++is) {
       particles[is].sync(minipic::host, minipic::device);
     }
+*/
   }
 
   // __________________________________________________________________
   // Sum all species contribution in the local and global current grids
 
   if (params.current_projection || params.n_particles > 0) {
-
+/*
     em.sync(minipic::host, minipic::device);
     for (std::size_t is = 0; is < particles.size(); ++is) {
       particles[is].sync(minipic::host, minipic::device);
     }
+    */
 
     // Perform the boundary conditions for current
     DEBUG("  -> start current BC")
@@ -131,6 +141,8 @@ void iterate(const Params &params, ElectroMagn &em,
       operators::antenna(params, em, params.antenna_profiles_m[iantenna],
                          params.antenna_positions_m[iantenna], it * params.dt);
     }
+    
+    em.sync(minipic::host, minipic::device);
 
     // Solve the Maxwell equation
     DEBUG("  -> start solve Maxwell")
@@ -139,7 +151,7 @@ void iterate(const Params &params, ElectroMagn &em,
 
     DEBUG("  -> stop solve Maxwell")
 
-    em.sync(minipic::host, minipic::device);
+    //em.sync(minipic::host, minipic::device);
 
     // Boundary conditions on EM fields
     DEBUG("  -> start solve BC")
@@ -147,6 +159,13 @@ void iterate(const Params &params, ElectroMagn &em,
     operators::solveBC(params, em);
 
     DEBUG("  -> end solve BC")
+    
+    /*
+    em.sync(minipic::device, minipic::host);
+    for (std::size_t is = 0; is < particles.size(); ++is) {
+      particles[is].sync(minipic::device, minipic::host);
+    }
+    */
 
   } // end test params.maxwell_solver
 }

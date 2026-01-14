@@ -452,10 +452,6 @@ void push_momentum(std::vector<Particles> &particles, double dt) {
   */
 
   } // end for species
-  
-  for (std::size_t is = 0; is < particles.size(); ++is) {
-      particles[is].sync(minipic::device, minipic::host);
-    }
 }
 
 //! \brief Boundaries condition on the particles, periodic
@@ -538,11 +534,7 @@ void pushBC(const Params &params, std::vector<Particles> &particles) {
 //! \param[in] particles Vector of species particles.
 void project(const Params &params, ElectroMagn &em,
              std::vector<Particles> &particles) {
-  em.sync(minipic::host, minipic::device);
-  for (std::size_t is = 0; is < particles.size(); ++is) {
-      particles[is].sync(minipic::host, minipic::device);
-  }
-  
+ 
   for (std::size_t is = 0; is < particles.size(); is++) {
 
     const std::size_t n_particles = particles[is].size();
@@ -658,12 +650,6 @@ void project(const Params &params, ElectroMagn &em,
     
     Kokkos::fence();
   }   // end for each species
-  
-  
-  em.sync(minipic::device, minipic::host);
-  for (std::size_t is = 0; is < particles.size(); ++is) {
-      particles[is].sync(minipic::device, minipic::host);
-  }
   
 }
 
@@ -820,9 +806,6 @@ void solve_maxwell(const Params &params, ElectroMagn &em) {
         	Bz(ix, iy, iz) += -dt_over_dx * (Ey(ix, iy, iz) - Ey(ix - 1, iy, iz)) +
                           dt_over_dy * (Ex(ix, iy, iz) - Ex(ix, iy - 1, iz));
         });
-        
-  //TODO REMOVE THIS
-  em.sync(minipic::device, minipic::host);
 
 } // end solve
 
