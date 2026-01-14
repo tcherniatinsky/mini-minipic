@@ -106,7 +106,7 @@ void interpolate(ElectroMagn &em, std::vector<Particles> &particles) {
     ElectroMagn::view_t By = em.By_m;
     ElectroMagn::view_t Bz = em.Bz_m;
 
-    Kokkos::parallel_for(n_particles, KOKKOS_LAMBDA(const int part) 
+    Kokkos::parallel_for("interpolate", n_particles, KOKKOS_LAMBDA(const int part) 
     {
       // Calculate normalized positions
       const double ixn = particle_x(part) * em.inv_dx_m;
@@ -269,7 +269,7 @@ void push(std::vector<Particles> &particles, double dt) {
     Particles::view_t y_m = particles[is].y_m;
     Particles::view_t z_m = particles[is].z_m;
     
-    Kokkos::parallel_for(n_particles, KOKKOS_LAMBDA(const int ip) {
+    Kokkos::parallel_for("push particles", n_particles, KOKKOS_LAMBDA(const int ip) {
       // 1/2 E
       double px = qp * Ex_m(ip);
       double py = qp * Ey_m(ip);
@@ -351,7 +351,7 @@ void push_momentum(std::vector<Particles> &particles, double dt) {
     Particles::view_t By_m = particles[is].By_m;
     Particles::view_t Bz_m = particles[is].Bz_m;
     
-    Kokkos::parallel_for(n_particles, KOKKOS_LAMBDA(const int ip) {
+    Kokkos::parallel_for("push momentums", n_particles, KOKKOS_LAMBDA(const int ip) {
 	  double px = qp * Ex_m(ip);
       double py = qp * Ey_m(ip);
       double pz = qp * Ez_m(ip);
@@ -399,57 +399,6 @@ void push_momentum(std::vector<Particles> &particles, double dt) {
 	});
 	
 	Kokkos::fence();
-	
-
-	/*
-    for (std::size_t ip = 0; ip < n_particles; ++ip) {
-      // 1/2 E
-      double px = qp * particles[is].Ex_h_m(ip);
-      double py = qp * particles[is].Ey_h_m(ip);
-      double pz = qp * particles[is].Ez_h_m(ip);
-
-      const double ux = particles[is].mx_h_m(ip) + px;
-      const double uy = particles[is].my_h_m(ip) + py;
-      const double uz = particles[is].mz_h_m(ip) + pz;
-
-      // gamma-factor
-      double usq = (ux * ux + uy * uy + uz * uz);
-      double gamma = sqrt(1 + usq);
-      double gamma_inv = qp / gamma;
-
-      // B, T = Transform to rotate the particle
-      const double tx = gamma_inv * particles[is].Bx_h_m(ip);
-      const double ty = gamma_inv * particles[is].By_h_m(ip);
-      const double tz = gamma_inv * particles[is].Bz_h_m(ip);
-      const double tsq = 1. + (tx * tx + ty * ty + tz * tz);
-      double tsq_inv = 1. / tsq;
-
-      px += ((1.0 + tx * tx - ty * ty - tz * tz) * ux +
-             2.0 * (tx * ty + tz) * uy + 2.0 * (tz * tx - ty) * uz) *
-            tsq_inv;
-
-      py += (2.0 * (tx * ty - tz) * ux +
-             (1.0 - tx * tx + ty * ty - tz * tz) * uy +
-             2.0 * (ty * tz + tx) * uz) *
-            tsq_inv;
-
-      pz += (2.0 * (tz * tx + ty) * ux + 2.0 * (ty * tz - tx) * uy +
-             (1.0 - tx * tx - ty * ty + tz * tz) * uz) *
-            tsq_inv;
-
-      // gamma-factor
-      usq = (px * px + py * py + pz * pz);
-      gamma = sqrt(1 + usq);
-
-      // Update inverse gamma factor
-      gamma_inv = 1 / gamma;
-
-      // Update momentum
-      particles[is].mx_h_m(ip) = px;
-      particles[is].my_h_m(ip) = py;
-      particles[is].mz_h_m(ip) = pz;
-    } // end for particles
-  */
 
   } // end for species
 }
@@ -560,7 +509,7 @@ void project(const Params &params, ElectroMagn &em,
     const double params_inv_dy = params.inv_dy;
     const double params_inv_dz = params.inv_dz;
 
-    Kokkos::parallel_for(n_particles, KOKKOS_LAMBDA(const int part) {
+    Kokkos::parallel_for("project", n_particles, KOKKOS_LAMBDA(const int part) {
       // Delete if already compute by Pusher
       const double charge_weight =
           inv_cell_volume_x_q * weight_m(part);
@@ -685,21 +634,9 @@ void solve_maxwell(const Params &params, ElectroMagn &em) {
   const int nz_p = em.nz_p_m;
   
   typedef Kokkos::MDRangePolicy<Kokkos::DefaultExecutionSpace, Kokkos::Rank<3>> mdrange_policy3;
- 
-  /*
-  // Electric field Ex (d,p,p)
-  for (int ix = 0; ix < em.nx_d_m; ++ix) {
-    for (int iy = 0; iy < em.ny_p_m; ++iy) {
-      for (int iz = 0; iz < em.nz_p_m; ++iz) {
-        Ex(ix, iy, iz) += -dt * em.Jx_h_m(ix, iy + 1, iz + 1) +
-                          dt_over_dy * (Bz(ix, iy + 1, iz) - Bz(ix, iy, iz)) -
-                          dt_over_dz * (By(ix, iy, iz + 1) - By(ix, iy, iz));
-      }
-    }
-  }
-  */
   
   Kokkos::parallel_for(
+		"update Ex in solve_maxwell",
         mdrange_policy3({0, 0, 0}, {nx_d, ny_p, nz_p}),
         KOKKOS_LAMBDA(const int ix, const int iy, const int iz) {
         	Ex(ix, iy, iz) += -dt * Jx(ix, iy + 1, iz + 1) +
@@ -707,19 +644,8 @@ void solve_maxwell(const Params &params, ElectroMagn &em) {
                           dt_over_dz * (By(ix, iy, iz + 1) - By(ix, iy, iz));
         });
 
-  /*
-  // Electric field Ey (p,d,p)
-  for (int ix = 0; ix < em.nx_p_m; ++ix) {
-    for (int iy = 0; iy < em.ny_d_m; ++iy) {
-      for (int iz = 0; iz < em.nz_p_m; ++iz) {
-        Ey(ix, iy, iz) += -dt * em.Jy_h_m(ix + 1, iy, iz + 1) -
-                          dt_over_dx * (Bz(ix + 1, iy, iz) - Bz(ix, iy, iz)) +
-                          dt_over_dz * (Bx(ix, iy, iz + 1) - Bx(ix, iy, iz));
-      }
-    }
-  }
-  */
   Kokkos::parallel_for(
+		"update Ey in solve_maxwell",
         mdrange_policy3({0, 0, 0}, {nx_p, ny_d, nz_p}),
         KOKKOS_LAMBDA(const int ix, const int iy, const int iz) {
         	Ey(ix, iy, iz) += -dt * Jy(ix + 1, iy, iz + 1) -
@@ -728,19 +654,9 @@ void solve_maxwell(const Params &params, ElectroMagn &em) {
         });
 
   // Electric field Ez (p,p,d)
-  /*
-  for (int ix = 0; ix < em.nx_p_m; ++ix) {
-    for (int iy = 0; iy < em.ny_p_m; ++iy) {
-      for (int iz = 0; iz < em.nz_d_m; ++iz) {
-        Ez(ix, iy, iz) += -dt * em.Jz_h_m(ix + 1, iy + 1, iz) +
-                          dt_over_dx * (By(ix + 1, iy, iz) - By(ix, iy, iz)) -
-                          dt_over_dy * (Bx(ix, iy + 1, iz) - Bx(ix, iy, iz));
-      }
-    }
-  }
-  */
   
   Kokkos::parallel_for(
+		"update Ez in solve_maxwell",
         mdrange_policy3({0, 0, 0}, {nx_p, ny_p, nz_d}),
         KOKKOS_LAMBDA(const int ix, const int iy, const int iz) {
         	Ez(ix, iy, iz) += -dt * Jz(ix + 1, iy + 1, iz) +
@@ -751,20 +667,11 @@ void solve_maxwell(const Params &params, ElectroMagn &em) {
   /////     Solve Maxwell Faraday (B)
 
   // Magnetic field Bx (p,d,d)
-  /*
-  for (int ix = 0; ix < em.nx_p_m; ++ix) {
-    for (int iy = 1; iy < em.ny_d_m - 1; ++iy) {
-      for (int iz = 1; iz < em.nz_d_m - 1; ++iz) {
-        Bx(ix, iy, iz) += -dt_over_dy * (Ez(ix, iy, iz) - Ez(ix, iy - 1, iz)) +
-                          dt_over_dz * (Ey(ix, iy, iz) - Ey(ix, iy, iz - 1));
-      }
-    }
-  }
-  */
   
   Kokkos::fence("Wait for E to be updated");
   
   Kokkos::parallel_for(
+		"update Bx in solve_maxwell",
         mdrange_policy3({0, 1, 1}, {nx_p, ny_d, nz_d}),
         KOKKOS_LAMBDA(const int ix, const int iy, const int iz) {
         	Bx(ix, iy, iz) += -dt_over_dy * (Ez(ix, iy, iz) - Ez(ix, iy - 1, iz)) +
@@ -772,17 +679,8 @@ void solve_maxwell(const Params &params, ElectroMagn &em) {
         });
 
   // Magnetic field By (d,p,d)
-/*
-  for (int ix = 1; ix < em.nx_d_m - 1; ++ix) {
-    for (int iy = 0; iy < em.ny_p_m; ++iy) {
-      for (int iz = 1; iz < em.nz_d_m - 1; ++iz) {
-        By(ix, iy, iz) += -dt_over_dz * (Ex(ix, iy, iz) - Ex(ix, iy, iz - 1)) +
-                          dt_over_dx * (Ez(ix, iy, iz) - Ez(ix - 1, iy, iz));
-      }
-    }
-  }
-  */
   Kokkos::parallel_for(
+		"update By in solve_maxwell",
         mdrange_policy3({1, 0, 1}, {nx_d, ny_p, nz_d}),
         KOKKOS_LAMBDA(const int ix, const int iy, const int iz) {
         	By(ix, iy, iz) += -dt_over_dz * (Ex(ix, iy, iz) - Ex(ix, iy, iz - 1)) +
@@ -790,17 +688,8 @@ void solve_maxwell(const Params &params, ElectroMagn &em) {
         });
 
   // Magnetic field Bz (d,d,p)
-/*
-  for (int ix = 1; ix < em.nx_d_m - 1; ++ix) {
-    for (int iy = 1; iy < em.ny_d_m - 1; ++iy) {
-      for (int iz = 0; iz < em.nz_p_m; ++iz) {
-        Bz(ix, iy, iz) += -dt_over_dx * (Ey(ix, iy, iz) - Ey(ix - 1, iy, iz)) +
-                          dt_over_dy * (Ex(ix, iy, iz) - Ex(ix, iy - 1, iz));
-      }
-    }
-  }
-  */
   Kokkos::parallel_for(
+		"update Bz in solve_maxwell",
         mdrange_policy3({1, 1, 0}, {nx_d, ny_d, nz_p}),
         KOKKOS_LAMBDA(const int ix, const int iy, const int iz) {
         	Bz(ix, iy, iz) += -dt_over_dx * (Ey(ix, iy, iz) - Ey(ix - 1, iy, iz)) +
@@ -839,6 +728,7 @@ void currentBC(const Params &params, ElectroMagn &em) {
     // X
 
     Kokkos::parallel_for(
+		"X BC Update Jx in currentBC",
         mdrange_policy({0, 0}, {ny_Jx, nz_Jx}),
         KOKKOS_LAMBDA(const int iy, const int iz) {
           Jx(0, iy, iz) += Jx(nx_Jx - 2, iy, iz);
@@ -849,6 +739,7 @@ void currentBC(const Params &params, ElectroMagn &em) {
         });
 
     Kokkos::parallel_for(
+		"X BC Update Jy in currentBC",
         mdrange_policy({0, 0}, {ny_Jy, nz_Jy}),
         KOKKOS_LAMBDA(const int iy, const int iz) {
           Jy(0, iy, iz) += Jy(nx_Jy - 2, iy, iz);
@@ -859,6 +750,7 @@ void currentBC(const Params &params, ElectroMagn &em) {
         });
 
     Kokkos::parallel_for(
+		"X BC Update Jz in currentBC",
         mdrange_policy({0, 0}, {ny_Jz, nz_Jz}),
         KOKKOS_LAMBDA(const int iy, const int iz) {
           Jz(0, iy, iz) += Jz(nx_Jz - 2, iy, iz);
@@ -873,6 +765,7 @@ void currentBC(const Params &params, ElectroMagn &em) {
     // Y
 
     Kokkos::parallel_for(
+		"Y BC Update Jx in currentBC",
         mdrange_policy({0, 0}, {nx_Jx, nz_Jx}),
         KOKKOS_LAMBDA(const int ix, const int iz) {
           Jx(ix, 0, iz) += Jx(ix, ny_Jx - 2, iz);
@@ -883,6 +776,7 @@ void currentBC(const Params &params, ElectroMagn &em) {
         });
 
     Kokkos::parallel_for(
+		"Y BC Update Jy in currentBC",
         mdrange_policy({0, 0}, {nx_Jy, nz_Jy}),
         KOKKOS_LAMBDA(const int ix, const int iz) {
           Jy(ix, 0, iz) += Jy(ix, ny_Jy - 2, iz);
@@ -893,6 +787,7 @@ void currentBC(const Params &params, ElectroMagn &em) {
         });
 
     Kokkos::parallel_for(
+		"Y BC Update Jz in currentBC",
         mdrange_policy({0, 0}, {nx_Jz, nz_Jz}),
         KOKKOS_LAMBDA(const int ix, const int iz) {
           Jz(ix, 0, iz) += Jz(ix, ny_Jz - 2, iz);
@@ -907,6 +802,7 @@ void currentBC(const Params &params, ElectroMagn &em) {
     // Z
 
     Kokkos::parallel_for(
+		"Z BC Update Jx in currentBC",
         mdrange_policy({0, 0}, {nx_Jx, ny_Jx}),
         KOKKOS_LAMBDA(const int ix, const int iy) {
           Jx(ix, iy, 0) += Jx(ix, iy, nz_Jx - 2);
@@ -917,6 +813,7 @@ void currentBC(const Params &params, ElectroMagn &em) {
         });
 
     Kokkos::parallel_for(
+		"Z BC Update Jy in currentBC",
         mdrange_policy({0, 0}, {nx_Jy, ny_Jy}),
         KOKKOS_LAMBDA(const int ix, const int iy) {
           Jy(ix, iy, 0) += Jy(ix, iy, nz_Jy - 2);
@@ -927,6 +824,7 @@ void currentBC(const Params &params, ElectroMagn &em) {
         });
 
     Kokkos::parallel_for(
+		"Z BC Update Jz in currentBC",
         mdrange_policy({0, 0}, {nx_Jz, ny_Jz}),
         KOKKOS_LAMBDA(const int ix, const int iy) {
           Jz(ix, iy, 0) += Jz(ix, iy, nz_Jz - 2);
@@ -1135,7 +1033,7 @@ void antenna(const Params &params, ElectroMagn &em,
              std::function<double(double, double, double)> profile, double x,
              double t) {
 
-  ElectroMagn::hostview_t *J = &em.Jz_h_m;
+  ElectroMagn::hostview_t J = em.Jz_h_m;
 
   const int ix = std::floor(
       (x - params.inf_x - em.J_dual_zx_m * 0.5 * params.dx) / params.dx);
@@ -1143,15 +1041,15 @@ void antenna(const Params &params, ElectroMagn &em,
   const double yfs = 0.5 * params.Ly + params.inf_y;
   const double zfs = 0.5 * params.Lz + params.inf_z;
 
-  for (std::size_t iy = 0; iy < J->extent(1); ++iy) {
-    for (std::size_t iz = 0; iz < J->extent(2); ++iz) {
+  for (std::size_t iy = 0; iy < J.extent(1); ++iy) {
+    for (std::size_t iz = 0; iz < J.extent(2); ++iz) {
 
       const double y =
           (iy - em.J_dual_zy_m * 0.5) * params.dy + params.inf_y - yfs;
       const double z =
           (iz - em.J_dual_zz_m * 0.5) * params.dz + params.inf_z - zfs;
 
-      (*J)(ix, iy, iz) = profile(y, z, t);
+      J(ix, iy, iz) = profile(y, z, t);
     }
   }
 } // end antenna
