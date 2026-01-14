@@ -611,14 +611,28 @@ void solve_maxwell(const Params &params, ElectroMagn &em) {
   /////     Solve Maxwell Ampere (E)
   // Electric field Ex (d,p,p)
 
-  ElectroMagn::hostview_t Ex = em.Ex_h_m;
-  ElectroMagn::hostview_t Ey = em.Ey_h_m;
-  ElectroMagn::hostview_t Ez = em.Ez_h_m;
+  ElectroMagn::view_t Ex = em.Ex_m; //ElectroMagn::hostview_t Ex = em.Ex_h_m;
+  ElectroMagn::view_t Ey = em.Ey_m; //ElectroMagn::hostview_t Ey = em.Ey_h_m;
+  ElectroMagn::view_t Ez = em.Ez_m; //ElectroMagn::hostview_t Ez = em.Ez_h_m;
 
-  ElectroMagn::hostview_t Bx = em.Bx_h_m;
-  ElectroMagn::hostview_t By = em.By_h_m;
-  ElectroMagn::hostview_t Bz = em.Bz_h_m;
-
+  ElectroMagn::view_t Bx = em.Bx_m; //ElectroMagn::hostview_t Bx = em.Bx_h_m;
+  ElectroMagn::view_t By = em.By_m; //ElectroMagn::hostview_t By = em.By_h_m;
+  ElectroMagn::view_t Bz = em.Bz_m; //ElectroMagn::hostview_t Bz = em.Bz_h_m;
+  
+  ElectroMagn::view_t Jx = em.Jx_m;
+  ElectroMagn::view_t Jy = em.Jy_m;
+  ElectroMagn::view_t Jz = em.Jz_m;
+  
+  const int nx_d = em.nx_d_m;
+  const int ny_d = em.ny_d_m;
+  const int nz_d = em.nz_d_m;
+  const int nx_p = em.nx_p_m;
+  const int ny_p = em.ny_p_m;
+  const int nz_p = em.nz_p_m;
+  
+  typedef Kokkos::MDRangePolicy<Kokkos::DefaultExecutionSpace, Kokkos::Rank<3>> mdrange_policy3;
+ 
+  /*
   // Electric field Ex (d,p,p)
   for (int ix = 0; ix < em.nx_d_m; ++ix) {
     for (int iy = 0; iy < em.ny_p_m; ++iy) {
@@ -629,7 +643,17 @@ void solve_maxwell(const Params &params, ElectroMagn &em) {
       }
     }
   }
+  */
+  
+  Kokkos::parallel_for(
+        mdrange_policy3({0, 0, 0}, {nx_d, ny_p, nz_p}),
+        KOKKOS_LAMBDA(const int ix, const int iy, const int iz) {
+        	Ex(ix, iy, iz) += -dt * Jx(ix, iy + 1, iz + 1) +
+                          dt_over_dy * (Bz(ix, iy + 1, iz) - Bz(ix, iy, iz)) -
+                          dt_over_dz * (By(ix, iy, iz + 1) - By(ix, iy, iz));
+        });
 
+  /*
   // Electric field Ey (p,d,p)
   for (int ix = 0; ix < em.nx_p_m; ++ix) {
     for (int iy = 0; iy < em.ny_d_m; ++iy) {
@@ -640,9 +664,17 @@ void solve_maxwell(const Params &params, ElectroMagn &em) {
       }
     }
   }
+  */
+  Kokkos::parallel_for(
+        mdrange_policy3({0, 0, 0}, {nx_p, ny_d, nz_p}),
+        KOKKOS_LAMBDA(const int ix, const int iy, const int iz) {
+        	Ey(ix, iy, iz) += -dt * Jy(ix + 1, iy, iz + 1) -
+                          dt_over_dx * (Bz(ix + 1, iy, iz) - Bz(ix, iy, iz)) +
+                          dt_over_dz * (Bx(ix, iy, iz + 1) - Bx(ix, iy, iz));
+        });
 
   // Electric field Ez (p,p,d)
-
+  /*
   for (int ix = 0; ix < em.nx_p_m; ++ix) {
     for (int iy = 0; iy < em.ny_p_m; ++iy) {
       for (int iz = 0; iz < em.nz_d_m; ++iz) {
@@ -652,11 +684,20 @@ void solve_maxwell(const Params &params, ElectroMagn &em) {
       }
     }
   }
+  */
+  
+  Kokkos::parallel_for(
+        mdrange_policy3({0, 0, 0}, {nx_p, ny_p, nz_d}),
+        KOKKOS_LAMBDA(const int ix, const int iy, const int iz) {
+        	Ez(ix, iy, iz) += -dt * Jz(ix + 1, iy + 1, iz) +
+                          dt_over_dx * (By(ix + 1, iy, iz) - By(ix, iy, iz)) -
+                          dt_over_dy * (Bx(ix, iy + 1, iz) - Bx(ix, iy, iz));
+        });
 
   /////     Solve Maxwell Faraday (B)
 
   // Magnetic field Bx (p,d,d)
-
+  /*
   for (int ix = 0; ix < em.nx_p_m; ++ix) {
     for (int iy = 1; iy < em.ny_d_m - 1; ++iy) {
       for (int iz = 1; iz < em.nz_d_m - 1; ++iz) {
@@ -665,9 +706,19 @@ void solve_maxwell(const Params &params, ElectroMagn &em) {
       }
     }
   }
+  */
+  
+  Kokkos::fence("Wait for E to be updated");
+  
+  Kokkos::parallel_for(
+        mdrange_policy3({0, 1, 1}, {nx_p, ny_d, nz_d}),
+        KOKKOS_LAMBDA(const int ix, const int iy, const int iz) {
+        	Bx(ix, iy, iz) += -dt_over_dy * (Ez(ix, iy, iz) - Ez(ix, iy - 1, iz)) +
+                          dt_over_dz * (Ey(ix, iy, iz) - Ey(ix, iy, iz - 1));
+        });
 
   // Magnetic field By (d,p,d)
-
+/*
   for (int ix = 1; ix < em.nx_d_m - 1; ++ix) {
     for (int iy = 0; iy < em.ny_p_m; ++iy) {
       for (int iz = 1; iz < em.nz_d_m - 1; ++iz) {
@@ -676,9 +727,16 @@ void solve_maxwell(const Params &params, ElectroMagn &em) {
       }
     }
   }
+  */
+  Kokkos::parallel_for(
+        mdrange_policy3({1, 0, 1}, {nx_d, ny_p, nz_d}),
+        KOKKOS_LAMBDA(const int ix, const int iy, const int iz) {
+        	By(ix, iy, iz) += -dt_over_dz * (Ex(ix, iy, iz) - Ex(ix, iy, iz - 1)) +
+                          dt_over_dx * (Ez(ix, iy, iz) - Ez(ix - 1, iy, iz));
+        });
 
   // Magnetic field Bz (d,d,p)
-
+/*
   for (int ix = 1; ix < em.nx_d_m - 1; ++ix) {
     for (int iy = 1; iy < em.ny_d_m - 1; ++iy) {
       for (int iz = 0; iz < em.nz_p_m; ++iz) {
@@ -687,6 +745,16 @@ void solve_maxwell(const Params &params, ElectroMagn &em) {
       }
     }
   }
+  */
+  Kokkos::parallel_for(
+        mdrange_policy3({1, 1, 0}, {nx_d, ny_d, nz_p}),
+        KOKKOS_LAMBDA(const int ix, const int iy, const int iz) {
+        	Bz(ix, iy, iz) += -dt_over_dx * (Ey(ix, iy, iz) - Ey(ix - 1, iy, iz)) +
+                          dt_over_dy * (Ex(ix, iy, iz) - Ex(ix, iy - 1, iz));
+        });
+        
+  //TODO REMOVE THIS
+  em.sync(minipic::device, minipic::host);
 
 } // end solve
 
