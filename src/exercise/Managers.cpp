@@ -19,12 +19,13 @@ void initialize(const Params &params, ElectroMagn &em,
               << "\n"
               << std::endl;
 
+    operators::interpolate(em, particles);
+    
     em.sync(minipic::device, minipic::host);
     for (std::size_t is = 0; is < particles.size(); ++is) {
       particles[is].sync(minipic::device, minipic::host);
     }
-
-    operators::interpolate(em, particles);
+    
     operators::push_momentum(particles, -0.5 * params.dt);
 
     em.sync(minipic::host, minipic::device);
@@ -52,20 +53,10 @@ void iterate(const Params &params, ElectroMagn &em,
 
   DEBUG("  -> stop interpolate");
 
-  em.sync(minipic::device, minipic::host);
-  for (std::size_t is = 0; is < particles.size(); ++is) {
-      particles[is].sync(minipic::device, minipic::host);
-  }
-
   // Push all particles
   DEBUG("  -> start push ");
 
   operators::push(particles, params.dt);
-  
-  em.sync(minipic::host, minipic::device);
-  for (std::size_t is = 0; is < particles.size(); ++is) {
-      particles[is].sync(minipic::host, minipic::device);
-  }
 
   DEBUG("  -> stop push");
 
@@ -73,6 +64,11 @@ void iterate(const Params &params, ElectroMagn &em,
   DEBUG("  -> Patch 0: start pushBC");
 
   operators::pushBC(params, particles);
+
+  em.sync(minipic::device, minipic::host);
+  for (std::size_t is = 0; is < particles.size(); ++is) {
+      particles[is].sync(minipic::device, minipic::host);
+  }
 
   DEBUG("  -> stop pushBC");
 
