@@ -10,6 +10,7 @@
 #include <Kokkos_Core.hpp>
 
 #include "Operators.hpp"
+#include "Graph.hpp"
 
 namespace operators {
 
@@ -600,6 +601,15 @@ void project(const Params &params, ElectroMagn &em,
     Kokkos::fence();
   }   // end for each species
   
+}
+
+//! \brief Solve Maxwell equations to compute EM fields.
+//! \param[in] params Constant global parameters.
+//! \param[in] em Electromagnetic fields.
+void solve_maxwell_graph(const Params &params, ElectroMagn &em) {
+    static auto graph = create_solve_maxwell_graph(params, em);
+    
+    graph.submit();
 }
 
 //! \brief Solve Maxwell equations to compute EM fields.

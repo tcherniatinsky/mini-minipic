@@ -31,4 +31,4 @@ fi
 
 # Launch the test
 
-mini-run --fresh -g gpu-a100 -s thermal
+mini-run --fresh -g gpu-a100 -s thermal_heavy
