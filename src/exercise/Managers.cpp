@@ -95,18 +95,74 @@ void iterate(const Params &params, ElectroMagn &em,
 
   if (params.maxwell_solver) {
 
-	Kokkos::deep_copy(em.Jz_h_m,em.Jz_m);
-    //em.sync(minipic::device, minipic::host);
+	//Kokkos::deep_copy(em.Jz_h_m,em.Jz_m);
+	//Fill a View with all necessary data for antenna profiles
+	Kokkos::View<double *> antenna_positions_view("antenna positions view", params.antenna_profiles_m.size());
+	Kokkos::View<double ***> antenna_profiles_view("antenna profiles view", params.antenna_profiles_m.size(), em.Jz_h_m.extent(1), em.Jz_h_m.extent(2));
+	auto antenna_positions_view_h = Kokkos::create_mirror_view(antenna_positions_view);
+	auto antenna_profiles_view_h = Kokkos::create_mirror_view(antenna_profiles_view);
+	
+	//Fill antenna profiles on host
+	const double t = it * params.dt;
+	const double yfs = 0.5 * params.Ly + params.inf_y;
+	const double zfs = 0.5 * params.Lz + params.inf_z;
+	const double dx = params.dx;
+	const double inf_x = params.inf_x;
+	//Policy to run code on OpenMP
+	typedef Kokkos::MDRangePolicy<Kokkos::DefaultHostExecutionSpace, Kokkos::Rank<3>> host_mdrange_policy;
+	//Policy to run code on Cuda
+	typedef Kokkos::MDRangePolicy<Kokkos::DefaultExecutionSpace, Kokkos::Rank<3>> device_mdrange_policy;
+	Kokkos::parallel_for(host_mdrange_policy({0, 0, 0}, {params.antenna_profiles_m.size(), em.Jz_h_m.extent(1), em.Jz_h_m.extent(2)}),
+        [=](const int iantenna, const int iy, const int iz) {
+          const double x = params.antenna_positions_m[iantenna];
+          const double y = (iy - em.J_dual_zy_m * 0.5) * params.dy + params.inf_y - yfs;
+		  const double z = (iz - em.J_dual_zz_m * 0.5) * params.dz + params.inf_z - zfs;
+		  antenna_positions_view_h(iantenna) = x;
+          antenna_profiles_view_h(iantenna, iy, iz) =  params.antenna_profiles_m[iantenna](y, z, t);
+        }
+    );
+    Kokkos::fence();
+    /*
+    for(int iantenna = 0; iantenna < params.antenna_profiles_m.size(); ++iantenna)
+    {
+		for(int iy = 0; iy < em.Jz_h_m.extent(1); ++iy)
+		{
+			for(int iz = 0; iz < em.Jz_h_m.extent(2); ++iz)
+			{
+				const double x = params.antenna_positions_m[iantenna];
+				const double y = (iy - em.J_dual_zy_m * 0.5) * params.dy + params.inf_y - yfs;
+				const double z = (iz - em.J_dual_zz_m * 0.5) * params.dz + params.inf_z - zfs;
+				antenna_positions_view_h(iantenna) = x;
+				antenna_profiles_view_h(iantenna, iy, iz) =  params.antenna_profiles_m[iantenna](y, z, t);
+			}
+		}
+	}
+	* */
+	
+	//Copy to device
+	Kokkos::deep_copy(antenna_positions_view, antenna_positions_view_h);
+	Kokkos::deep_copy(antenna_profiles_view, antenna_profiles_view_h);
 
+	/*
     // Generate a laser field with an antenna
     for (std::size_t iantenna = 0; iantenna < params.antenna_profiles_m.size();
          iantenna++) {
       operators::antenna(params, em, params.antenna_profiles_m[iantenna],
                          params.antenna_positions_m[iantenna], it * params.dt);
     }
+    * */
     
-    //em.sync(minipic::host, minipic::device);
-    Kokkos::deep_copy(em.Jz_m,em.Jz_h_m);
+    ElectroMagn::view_t J = em.Jz_m;
+    
+    Kokkos::parallel_for(device_mdrange_policy({0, 0, 0}, {params.antenna_profiles_m.size(), em.Jz_h_m.extent(1), em.Jz_h_m.extent(2)}),
+        KOKKOS_LAMBDA(const int iantenna, const int iy, const int iz) {
+		  const double x = antenna_positions_view(iantenna);
+          const int ix = std::floor((x - inf_x - em.J_dual_zx_m * 0.5 * dx) / dx);
+          J(ix, iy, iz) = antenna_profiles_view(iantenna, iy, iz);
+        }
+    );
+    
+    //Kokkos::deep_copy(em.Jz_m,em.Jz_h_m);
 
     // Solve the Maxwell equation
     DEBUG("  -> start solve Maxwell")
