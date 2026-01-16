@@ -94,12 +94,6 @@ void iterate(const Params &params, ElectroMagn &em,
   // Maxwell solver
 
   if (params.maxwell_solver) {
-
-	//Fill a View with all necessary data for antenna profiles
-	Kokkos::View<double *> antenna_positions_view("antenna positions view", params.antenna_profiles_m.size());
-	Kokkos::View<double ***> antenna_profiles_view("antenna profiles view", params.antenna_profiles_m.size(), em.Jz_h_m.extent(1), em.Jz_h_m.extent(2));
-	auto antenna_positions_view_h = Kokkos::create_mirror_view(antenna_positions_view);
-	auto antenna_profiles_view_h = Kokkos::create_mirror_view(antenna_profiles_view);
 	
 	//Fill antenna profiles on host
 	const double t = it * params.dt;
@@ -108,6 +102,9 @@ void iterate(const Params &params, ElectroMagn &em,
 	const double dx = params.dx;
 	const double inf_x = params.inf_x;
 	const double J_dual_zx_m = em.J_dual_zx_m;
+	
+	em.resize_antenna_views(params.antenna_profiles_m.size());
+	
 	//Policy to run code on OpenMP
 	typedef Kokkos::MDRangePolicy<Kokkos::DefaultHostExecutionSpace, Kokkos::Rank<3>> host_mdrange_policy;
 	//Policy to run code on Cuda
@@ -117,18 +114,20 @@ void iterate(const Params &params, ElectroMagn &em,
           const double x = params.antenna_positions_m[iantenna];
           const double y = (iy - em.J_dual_zy_m * 0.5) * params.dy + params.inf_y - yfs;
 		  const double z = (iz - em.J_dual_zz_m * 0.5) * params.dz + params.inf_z - zfs;
-		  antenna_positions_view_h(iantenna) = x;
-          antenna_profiles_view_h(iantenna, iy, iz) =  params.antenna_profiles_m[iantenna](y, z, t);
+		  em.antenna_positions_view_h(iantenna) = x;
+          em.antenna_profiles_view_h(iantenna, iy, iz) =  params.antenna_profiles_m[iantenna](y, z, t);
         }
     );
     Kokkos::fence();
 	
 	//Copy to device
-	Kokkos::deep_copy(antenna_positions_view, antenna_positions_view_h);
-	Kokkos::deep_copy(antenna_profiles_view, antenna_profiles_view_h);
+	Kokkos::deep_copy(em.antenna_positions_view, em.antenna_positions_view_h);
+	Kokkos::deep_copy(em.antenna_profiles_view, em.antenna_profiles_view_h);
     
     ElectroMagn::view_t J = em.Jz_m;
   
+	typename ElectroMagn::AntennaPositionsView antenna_positions_view = em.antenna_positions_view;
+	typename ElectroMagn::AntennaProfilesView  antenna_profiles_view  = em.antenna_profiles_view;
     
     Kokkos::parallel_for(device_mdrange_policy({0, 0, 0}, {params.antenna_profiles_m.size(), em.Jz_h_m.extent(1), em.Jz_h_m.extent(2)}),
         KOKKOS_LAMBDA(const int iantenna, const int iy, const int iz) {

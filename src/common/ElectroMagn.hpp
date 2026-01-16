@@ -30,6 +30,38 @@ public:
   //! Invert certain value to avoid div
   double inv_dx_m, inv_dy_m, inv_dz_m, inv_cell_volume_m;
 
+	using AntennaPositionsView = Kokkos::View<double *>;
+	using AntennaProfilesView  = Kokkos::View<double ***>;
+	using Host_AntennaPositionsView = AntennaPositionsView::host_mirror_type;
+	using Host_AntennaProfilesView  = AntennaProfilesView::host_mirror_type;
+	
+	AntennaPositionsView antenna_positions_view;
+	AntennaProfilesView  antenna_profiles_view;
+	
+	Host_AntennaPositionsView antenna_positions_view_h;
+	Host_AntennaProfilesView  antenna_profiles_view_h;
+
+	bool is_antenna_init_m = false;
+
+	void resize_antenna_views(const size_t n_antenna)
+	{
+		if (not is_antenna_init_m)
+		{
+			antenna_positions_view = typename ElectroMagn::AntennaPositionsView("antenna positions view", n_antenna);
+			antenna_profiles_view = typename ElectroMagn::AntennaProfilesView("antenna profiles view", n_antenna, Jz_h_m.extent(1), Jz_h_m.extent(2));
+			antenna_positions_view_h = Kokkos::create_mirror_view(antenna_positions_view);
+			antenna_profiles_view_h = Kokkos::create_mirror_view(antenna_profiles_view) ;
+		}
+		else
+		{
+			Kokkos::resize(antenna_positions_view,   n_antenna);
+			Kokkos::resize(antenna_positions_view_h, n_antenna);
+			Kokkos::resize(antenna_profiles_view,    n_antenna, Jz_h_m.extent(1), Jz_h_m.extent(2));
+			Kokkos::resize(antenna_profiles_view_h,  n_antenna, Jz_h_m.extent(1), Jz_h_m.extent(2));
+		}
+		is_antenna_init_m = true;
+	}
+
   /*
     FIELDS on Yee lattice | Staggered grid
     Ex -> (ix+1/2)*dx, iy*dy      , iz*dz       same for Jx
